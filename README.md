@@ -53,7 +53,7 @@ fn main() -> ! {
         let mut buffer = [0; 64];
 
         if let Ok(size) = midi.read(&mut buffer) {
-            let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+            let buffer_reader = MidiPacketBufferReader::new(&buffer[0..size]);
             for packet in buffer_reader.into_iter() {
                 if let Ok(packet) = packet {
                     match packet.message {

@@ -1,34 +1,26 @@
-use crate::data::usb_midi::cable_number::CableNumber;
-use crate::data::usb_midi::code_index_number::CodeIndexNumber;
-use crate::data::byte::u4::U4;
-use crate:: midi_types::MidiMessage;
-use core::convert::TryFrom;
-use midi_convert::{
-    MidiParseError,
-    MidiRenderSlice,
-    MidiTryParseSlice,
+use crate::{
+    cable_number::CableNumber,
+    code_index_number::CodeIndexNumber,
+    midi_convert::{MidiParseError, MidiRenderSlice, MidiTryParseSlice},
+    midi_types::MidiMessage,
 };
-
+use core::convert::TryFrom;
 
 /// A packet that communicates with the host
 /// Currently supported is sending the specified normal midi
 /// message over the supplied cable number
 #[derive(Debug, PartialEq)]
 pub struct UsbMidiEventPacket {
-    pub cable_number : CableNumber,
-    pub message: MidiMessage
+    pub cable_number: CableNumber,
+    pub message: MidiMessage,
 }
 
-impl From<UsbMidiEventPacket> for [u8;4] {
-    fn from(value:UsbMidiEventPacket) -> [u8;4] {
-        let message= value.message;
-        let cable_number = U4::from(value.cable_number);
-        let index_number = {
-                let code_index = 
-                        CodeIndexNumber::find_from_message(&message);
-                U4::from(code_index)
-        };
-        let header = U4::combine(cable_number,index_number);
+impl From<UsbMidiEventPacket> for [u8; 4] {
+    fn from(value: UsbMidiEventPacket) -> [u8; 4] {
+        let message = value.message;
+        let cable_number: u8 = value.cable_number.into();
+        let index_number: u8 = CodeIndexNumber::find_from_message(&message).into();
+        let header = cable_number << 4 | index_number;
         let mut data: [u8; 4] = [header, 0, 0, 0];
         message.render_slice(&mut data[1..]);
 
@@ -36,9 +28,19 @@ impl From<UsbMidiEventPacket> for [u8;4] {
     }
 }
 
-#[derive(Debug)]
+impl From<(CableNumber, MidiMessage)> for UsbMidiEventPacket {
+    fn from(value: (CableNumber, MidiMessage)) -> Self {
+        let (cable_number, message) = value;
+        Self {
+            cable_number,
+            message,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum MidiPacketParsingError {
-    MissingCableNumber,
+    MissingHeader,
     MissingDataPacket,
     ParseError(MidiParseError),
 }
@@ -47,50 +49,43 @@ impl TryFrom<&[u8]> for UsbMidiEventPacket {
     type Error = MidiPacketParsingError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let raw_cable_number = match value.get(0) {
+        let raw_cable_number = match value.first() {
             Some(byte) => *byte >> 4,
-            None => return Err(MidiPacketParsingError::MissingCableNumber)
+            None => return Err(MidiPacketParsingError::MissingHeader),
         };
 
-        let cable_number = CableNumber::try_from(u8::from(raw_cable_number)).expect("(u8 >> 4) < 16");
+        let cable_number =
+            CableNumber::try_from(raw_cable_number).expect("(u8 >> 4) < 16");
         let message_body = match value.get(1..) {
             Some(bytes) => bytes,
-            None => return Err(MidiPacketParsingError::MissingDataPacket)
+            None => return Err(MidiPacketParsingError::MissingDataPacket),
         };
 
-        let message = MidiMessage::try_parse_slice(message_body).map_err(|e| MidiPacketParsingError::ParseError(e))?;
+        let message = MidiMessage::try_parse_slice(message_body)
+            .map_err(MidiPacketParsingError::ParseError)?;
 
         Ok(UsbMidiEventPacket {
             cable_number,
-            message
+            message,
         })
-    }
-}
-
-impl UsbMidiEventPacket{
-
-    pub fn from_midi(cable:CableNumber, midi:MidiMessage)
-        -> UsbMidiEventPacket{
-        UsbMidiEventPacket{
-            cable_number : cable,
-            message : midi
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        cable_number::CableNumber::{Cable0, Cable1},
+        event_packet::UsbMidiEventPacket,
+        midi_types::{Channel, Control, MidiMessage, Note, Program, Value14, Value7},
+    };
     use core::convert::TryFrom;
-    use crate::data::usb_midi::usb_midi_event_packet::UsbMidiEventPacket;
-    use crate::midi_types::{Channel, MidiMessage, Value7, Value14, Note, Program, Control};
-    use crate::data::usb_midi::cable_number::CableNumber::{Cable0,Cable1};
 
     macro_rules! decode_message_test {
         ($($id:ident:$value:expr,)*) => {
             $(
                 #[test]
                 fn $id() {
-                    let (usb_midi_data_packet,expected) = $value;
+                    let (usb_midi_data_packet, expected) = $value;
                     let message = UsbMidiEventPacket::try_from(&usb_midi_data_packet[..]).unwrap();
                     assert_eq!(expected, message);
                 }
