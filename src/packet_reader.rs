@@ -5,14 +5,12 @@ use crate::{
 use core::convert::TryFrom;
 
 /// Wrapper for parsing/iterating `UsbMidiEventPacket` messages from a slice
-pub struct MidiPacketBufferReader<'a> {
-    inner: core::slice::Chunks<'a, u8>,
-}
+pub struct MidiPacketBufferReader<'a>(core::slice::Chunks<'a, u8>);
 
 impl<'a> MidiPacketBufferReader<'a> {
     pub fn new(buffer: &'a [u8]) -> Self {
         let inner = buffer.chunks(MIDI_PACKET_SIZE);
-        MidiPacketBufferReader { inner }
+        MidiPacketBufferReader(inner)
     }
 }
 
@@ -20,7 +18,7 @@ impl<'a> Iterator for MidiPacketBufferReader<'a> {
     type Item = Result<UsbMidiEventPacket, MidiPacketParsingError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner
+        self.0
             .next()
             .map(UsbMidiEventPacket::try_from)
     }
@@ -28,7 +26,7 @@ impl<'a> Iterator for MidiPacketBufferReader<'a> {
 
 impl<'a> ExactSizeIterator for MidiPacketBufferReader<'a> {
     fn len(&self) -> usize {
-        self.inner.len()
+        self.0.len()
     }
 }
 
