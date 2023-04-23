@@ -22,7 +22,7 @@ impl<'a> Iterator for MidiPacketBufferReader<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
-            .map(|packet| UsbMidiEventPacket::try_from(packet))
+            .map(UsbMidiEventPacket::try_from)
     }
 }
 
